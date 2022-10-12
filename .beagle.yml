@@ -23,6 +23,18 @@ steps:
       proxy:
         from_secret: SOCKS5_PROXY
 
+  - name: s3-cache
+    image: registry.cn-qingdao.aliyuncs.com/wod/devops-s3-cache:1.0
+    settings:
+      restore: true
+      mount:
+        - ./vendor
+      endpoint: https://cache.wodcloud.com
+      access_key:
+        from_secret: ACCESS_KEY_MINIO
+      secret_key:
+        from_secret: SECRET_KEY_MINIO
+
   - name: golang
     image: registry.cn-qingdao.aliyuncs.com/wod/golang:1.19-alpine
     commands:
@@ -220,4 +232,18 @@ kind: secret
 name: REGISTRY_PASSWORD_ALIYUN
 get:
   name: REGISTRY_PASSWORD_ALIYUN
+  path: devops-secrets
+
+---
+kind: secret
+name: ACCESS_KEY_MINIO
+get:
+  name: ACCESS_KEY_MINIO
+  path: devops-secrets
+
+---
+kind: secret
+name: SECRET_KEY_MINIO
+get:
+  name: SECRET_KEY_MINIO
   path: devops-secrets

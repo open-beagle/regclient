@@ -1,0 +1,15 @@
+ARG BASE
+
+FROM ${BASE}
+
+ARG AUTHOR
+ARG VERSION
+
+LABEL maintainer=${AUTHOR} version=${VERSION}
+
+ARG TARGETOS
+ARG TARGETARCH
+
+ADD artifacts/regctl-${TARGETOS}-${TARGETARCH} /usr/local/bin/regctl
+ADD artifacts/regsync-${TARGETOS}-${TARGETARCH} /usr/local/bin/regsync
+ADD artifacts/regbot-${TARGETOS}-${TARGETARCH} /usr/local/bin/regbot

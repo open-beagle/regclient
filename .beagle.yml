@@ -17,23 +17,24 @@ clone:
   disable: true
 
 steps:
-  - name: fetch
-    image: registry.cn-qingdao.aliyuncs.com/wod/devops-git:1.0
-    settings:
-      proxy:
-        from_secret: SOCKS5_PROXY
-
   - name: s3-cache
     image: registry.cn-qingdao.aliyuncs.com/wod/devops-s3-cache:1.0
     settings:
       restore: true
       mount:
+        - ./.git
         - ./vendor
       endpoint: https://cache.wodcloud.com
       access_key:
         from_secret: ACCESS_KEY_MINIO
       secret_key:
         from_secret: SECRET_KEY_MINIO
+
+  - name: fetch
+    image: registry.cn-qingdao.aliyuncs.com/wod/devops-git:1.0
+    settings:
+      proxy:
+        from_secret: SOCKS5_PROXY
 
   - name: golang
     image: registry.cn-qingdao.aliyuncs.com/wod/golang:1.19-alpine
@@ -125,6 +126,20 @@ steps:
         from_secret: REGISTRY_USER_ALIYUN
       password:
         from_secret: REGISTRY_PASSWORD_ALIYUN
+
+  - name: minio
+    image: registry.cn-qingdao.aliyuncs.com/wod/devops-minio:1.0
+    volumes:
+      - name: docker
+        path: /var/run/docker.sock
+    environment:
+      S3_ACCESS_KEY: 
+        from_secret: ACCESS_KEY_MINIO
+      S3_SECRET_KEY: 
+        from_secret: SECRET_KEY_MINIO
+    commands:
+      - mc alias set cache --api=S3v4 https://cache.wodcloud.com $S3_ACCESS_KEY $S3_SECRET_KEY
+      - mc cp --recursive artifacts/ cache/vscode/regclient/v0.4.5/
 
 ---
 kind: pipeline

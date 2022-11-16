@@ -45,8 +45,7 @@ docker run --rm \
   -e PLUGIN_SECRET_KEY=$PLUGIN_SECRET_KEY \
   -e DRONE_REPO_OWNER="open-beagle" \
   -e DRONE_REPO_NAME="regclient" \
-  -e DRONE_COMMIT_BRANCH="dev" \
-  -e PLUGIN_MOUNT="vendor" \
+  -e PLUGIN_MOUNT=".git,vendor" \
   -v $(pwd):$(pwd) \
   -w $(pwd) \
   registry.cn-qingdao.aliyuncs.com/wod/devops-s3-cache:1.0
@@ -59,8 +58,6 @@ docker run --rm \
   -e PLUGIN_SECRET_KEY=$PLUGIN_SECRET_KEY \
   -e DRONE_REPO_OWNER="open-beagle" \
   -e DRONE_REPO_NAME="regclient" \
-  -e DRONE_COMMIT_BRANCH="dev" \
-  -e PLUGIN_MOUNT="vendor" \
   -v $(pwd):$(pwd) \
   -w $(pwd) \
   registry.cn-qingdao.aliyuncs.com/wod/devops-s3-cache:1.0

@@ -26,6 +26,7 @@ docker run -it \
 --rm \
 -v $PWD/:/go/src/github.com/regclient/regclient \
 -w /go/src/github.com/regclient/regclient \
+-e VCS_TAG=v0.4.5 \
 registry.cn-qingdao.aliyuncs.com/wod/golang:1.19-alpine \
 bash .beagle/build.sh
 

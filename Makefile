@@ -5,10 +5,10 @@ ARTIFACT_PLATFORMS=linux-amd64 linux-arm64 linux-ppc64le linux-mips64le
 ARTIFACTS=$(foreach cmd,$(addprefix artifacts/,$(COMMANDS)),$(addprefix $(cmd)-,$(ARTIFACT_PLATFORMS)))
 TEST_PLATFORMS=linux/386,linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64,linux/ppc64le,linux/s390x
 VCS_REF:=$(shell git rev-list -1 HEAD)
-ifneq ($(shell git status --porcelain 2>/dev/null),)
-  VCS_REF := $(VCS_REF)-dirty
-endif
-VCS_TAG:=$(shell git describe --tags --abbrev=0 2>/dev/null || true)
+# ifneq ($(shell git status --porcelain 2>/dev/null),)
+#   VCS_REF := $(VCS_REF)-dirty
+# endif
+VCS_TAG?=$(shell git describe --tags --abbrev=0 2>/dev/null || true)
 LD_FLAGS=-s -w -extldflags -static
 GO_BUILD_FLAGS=-trimpath -ldflags "$(LD_FLAGS)" -tags nolegacy
 DOCKERFILE_EXT:=$(shell if docker build --help 2>/dev/null | grep -q -- '--progress'; then echo ".buildkit"; fi)

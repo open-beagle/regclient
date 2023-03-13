@@ -7,7 +7,7 @@ git remote add upstream git@github.com:regclient/regclient.git
 
 git fetch upstream
 
-git merge v0.4.5
+git merge v0.4.7
 ```
 
 ## debug
@@ -26,7 +26,7 @@ docker run -it \
 --rm \
 -v $PWD/:/go/src/github.com/regclient/regclient \
 -w /go/src/github.com/regclient/regclient \
--e VCS_TAG=v0.4.5 \
+-e VCS_TAG=v0.4.7 \
 registry.cn-qingdao.aliyuncs.com/wod/golang:1.19-alpine \
 bash .beagle/build.sh
 

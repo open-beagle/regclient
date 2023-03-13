@@ -39,7 +39,7 @@ steps:
   - name: golang
     image: registry.cn-qingdao.aliyuncs.com/wod/golang:1.19-alpine
     environment:
-      VCS_TAG: v0.4.5
+      VCS_TAG: v0.4.7
     commands:
       - bash .beagle/build.sh
 
@@ -52,7 +52,7 @@ steps:
       dockerfile: .beagle/dockerfile
       base: registry.cn-qingdao.aliyuncs.com/wod/alpine:3-amd64
       repo: wod/regclient
-      version: v0.4.5
+      version: v0.4.7
       channel: amd64
       args: 'TARGETOS=linux,TARGETARCH=amd64'
       registry: registry.cn-qingdao.aliyuncs.com
@@ -70,7 +70,7 @@ steps:
       dockerfile: .beagle/dockerfile
       base: registry.cn-qingdao.aliyuncs.com/wod/alpine:3-arm64
       repo: wod/regclient
-      version: v0.4.5
+      version: v0.4.7
       channel: arm64
       args: 'TARGETOS=linux,TARGETARCH=arm64'
       registry: registry.cn-qingdao.aliyuncs.com
@@ -88,7 +88,7 @@ steps:
       dockerfile: .beagle/dockerfile
       base: registry.cn-qingdao.aliyuncs.com/wod/alpine:3-ppc64le
       repo: wod/regclient
-      version: v0.4.5
+      version: v0.4.7
       channel: ppc64le
       args: 'TARGETOS=linux,TARGETARCH=ppc64le'
       registry: registry.cn-qingdao.aliyuncs.com
@@ -106,7 +106,7 @@ steps:
       dockerfile: .beagle/dockerfile
       base: registry.cn-qingdao.aliyuncs.com/wod/alpine:3-mips64le
       repo: wod/regclient
-      version: v0.4.5
+      version: v0.4.7
       channel: mips64le
       args: 'TARGETOS=linux,TARGETARCH=mips64le'
       registry: registry.cn-qingdao.aliyuncs.com
@@ -122,8 +122,8 @@ steps:
         path: /var/run/docker.sock
     settings:
       platforms: linux/amd64,linux/arm64,linux/ppc64le,linux/mips64le
-      template: registry.cn-qingdao.aliyuncs.com/wod/regclient:v0.4.5-ARCH
-      target: registry.cn-qingdao.aliyuncs.com/wod/regclient:v0.4.5
+      template: registry.cn-qingdao.aliyuncs.com/wod/regclient:v0.4.7-ARCH
+      target: registry.cn-qingdao.aliyuncs.com/wod/regclient:v0.4.7
       username:
         from_secret: REGISTRY_USER_ALIYUN
       password:
@@ -141,7 +141,7 @@ steps:
         from_secret: SECRET_KEY_MINIO
     commands:
       - mc alias set cache --api=S3v4 https://cache.wodcloud.com $S3_ACCESS_KEY $S3_SECRET_KEY
-      - mc cp --recursive artifacts/ cache/vscode/regclient/v0.4.5/
+      - mc cp --recursive artifacts/ cache/vscode/regclient/v0.4.7/
 
 ---
 kind: pipeline
@@ -166,7 +166,7 @@ steps:
       - name: docker
         path: /var/run/docker.sock
     settings:
-      source: registry.cn-qingdao.aliyuncs.com/wod/regclient:v0.4.5-amd64
+      source: registry.cn-qingdao.aliyuncs.com/wod/regclient:v0.4.7-amd64
       target: registry.cn-qingdao.aliyuncs.com/wod/regclient:v0.4-amd64
       registry: registry.cn-qingdao.aliyuncs.com
       registry_user:
@@ -180,7 +180,7 @@ steps:
       - name: docker
         path: /var/run/docker.sock
     settings:
-      source: registry.cn-qingdao.aliyuncs.com/wod/regclient:v0.4.5-arm64
+      source: registry.cn-qingdao.aliyuncs.com/wod/regclient:v0.4.7-arm64
       target: registry.cn-qingdao.aliyuncs.com/wod/regclient:v0.4-arm64
       registry: registry.cn-qingdao.aliyuncs.com
       registry_user:
@@ -194,7 +194,7 @@ steps:
       - name: docker
         path: /var/run/docker.sock
     settings:
-      source: registry.cn-qingdao.aliyuncs.com/wod/regclient:v0.4.5-ppc64le
+      source: registry.cn-qingdao.aliyuncs.com/wod/regclient:v0.4.7-ppc64le
       target: registry.cn-qingdao.aliyuncs.com/wod/regclient:v0.4-ppc64le
       registry: registry.cn-qingdao.aliyuncs.com
       registry_user:
@@ -208,7 +208,7 @@ steps:
       - name: docker
         path: /var/run/docker.sock
     settings:
-      source: registry.cn-qingdao.aliyuncs.com/wod/regclient:v0.4.5-mips64le
+      source: registry.cn-qingdao.aliyuncs.com/wod/regclient:v0.4.7-mips64le
       target: registry.cn-qingdao.aliyuncs.com/wod/regclient:v0.4-mips64le
       registry: registry.cn-qingdao.aliyuncs.com
       registry_user:

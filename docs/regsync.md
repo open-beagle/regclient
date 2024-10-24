@@ -89,7 +89,7 @@ sync:
   Array of registry credentials and settings for connecting.
   To avoid saving credentials in the same file with the other settings, consider using the `${HOME}/.docker/config.json` or a template in the `user` and `pass`
   fields to expand a variable or file contents.
-  When using the `regclient/regsync` image, the docker config is read from `/home/appuser/.docker/config.json`.
+  When using the `ghcr.io/regclient/regsync` image, the docker config is read from `/home/appuser/.docker/config.json`.
   Each `creds` entry supports the following options:
   - `registry`:
     Hostname and port of the registry server used in image references.
@@ -147,6 +147,13 @@ sync:
     Blob size which skips the single put request in favor of the chunked upload.
     Note that a failed blob put will fall back to a chunked upload in most cases.
     Disable with -1 to always try a single put regardless of blob size.
+  - `reqPerSec`:
+    Requests per second to throttle API calls to the registry.
+    This may be a decimal like 0.5 to limit to one request every 2 seconds.
+    Disable by leaving undefined or setting to 0.
+  - `reqConcurrent`:
+    Number of concurrent requests that can be made to the registry.
+    Disable by leaving undefined or setting to 0.
 
 - `defaults`:
   Global settings and default values applied to each sync entry:
@@ -172,6 +179,10 @@ sync:
     All sync steps may be started concurrently to check if a mirror is needed, but will wait on this limit when a copy is needed.
     Defaults to 1.
   - `digestTags`: (bool) copies digest specific tags in addition to the manifests.
+  - `referrers`: (bool) copies referrers in addition to the selected manifests.
+  - `referrerFilters`: (array) list of filters for referrers to include, by default all referrers are included.
+    - `artifactType`: (string) artifact types to include.
+    - `annotations`: (map) mapping of annotations for referrers.
   - `forceRecursive`: (bool) forces a copy of all manifests and blobs even when the target parent manifest already exists.
   - `mediaTypes`:
     Array of media types to include.
@@ -203,7 +214,7 @@ sync:
     By default all platforms are copied along with the original upstream manifest list.
     Note that looking up the platform from a multi-platform image counts against the Docker Hub rate limit, and that rate limits are not checked prior to resolving the platform.
     When run with "server", the platform is only resolved once for each multi-platform digest seen.
-  - `backup`, `interval`, `schedule`, `ratelimit`, `digestTags`, `forceRecursive`, and `mediaTypes`:
+  - `backup`, `interval`, `schedule`, `ratelimit`, `digestTags`, `referrers`, `referrerFilters`, `forceRecursive`, and `mediaTypes`:
     See description under `defaults`.
 
 - `x-*`:

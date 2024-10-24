@@ -322,7 +322,7 @@ func ParseAuthHeaders(ahl []string) ([]Challenge, error) {
 	for _, ah := range ahl {
 		c, err := ParseAuthHeader(ah)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse challenge header: %s", ah)
+			return nil, fmt.Errorf("failed to parse challenge header: %s, %w", ah, err)
 		}
 		cl = append(cl, c...)
 	}
@@ -626,7 +626,7 @@ func (b *BearerHandler) isExpired() bool {
 		return true
 	}
 	expireSec := b.token.IssuedAt.Add(time.Duration(b.token.ExpiresIn) * time.Second)
-	expireSec.Add(tokenBuffer * -1)
+	expireSec = expireSec.Add(tokenBuffer * -1)
 	return time.Now().After(expireSec)
 }
 

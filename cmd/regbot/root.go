@@ -2,10 +2,6 @@ package main
 
 import (
 	"context"
-	"embed"
-	"encoding/json"
-	"errors"
-	"io/fs"
 	"os"
 	"os/signal"
 	"sync"
@@ -14,7 +10,9 @@ import (
 	"github.com/regclient/regclient"
 	"github.com/regclient/regclient/cmd/regbot/sandbox"
 	"github.com/regclient/regclient/config"
+	"github.com/regclient/regclient/internal/version"
 	"github.com/regclient/regclient/pkg/template"
+	"github.com/regclient/regclient/scheme/reg"
 	"github.com/robfig/cron/v3"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -36,18 +34,11 @@ var rootOpts struct {
 	format    string // for Go template formatting of various commands
 }
 
-//go:embed embed/*
-var embedFS embed.FS
-
 var (
-	// VCSRef and VCSTag are populated from an embed at build time
-	// These are used to version the UserAgent header
-	VCSRef = ""
-	VCSTag = ""
-	conf   *Config
-	log    *logrus.Logger
-	rc     *regclient.RegClient
-	sem    *semaphore.Weighted
+	conf *Config
+	log  *logrus.Logger
+	rc   *regclient.RegClient
+	sem  *semaphore.Weighted
 )
 
 var rootCmd = &cobra.Command{
@@ -88,12 +79,11 @@ func init() {
 		Hooks:     make(logrus.LevelHooks),
 		Level:     logrus.InfoLevel,
 	}
-	setupVCSVars()
 	rootCmd.PersistentFlags().StringVarP(&rootOpts.confFile, "config", "c", "", "Config file")
 	rootCmd.PersistentFlags().BoolVarP(&rootOpts.dryRun, "dry-run", "", false, "Dry Run, skip all external actions")
 	rootCmd.PersistentFlags().StringVarP(&rootOpts.verbosity, "verbosity", "v", logrus.InfoLevel.String(), "Log level (debug, info, warn, error, fatal, panic)")
 	rootCmd.PersistentFlags().StringArrayVar(&rootOpts.logopts, "logopt", []string{}, "Log options")
-	versionCmd.Flags().StringVarP(&rootOpts.format, "format", "", "{{jsonPretty .}}", "Format output with go template syntax")
+	versionCmd.Flags().StringVarP(&rootOpts.format, "format", "", "{{printPretty .}}", "Format output with go template syntax")
 
 	rootCmd.MarkPersistentFlagFilename("config")
 	serverCmd.MarkPersistentFlagRequired("config")
@@ -122,14 +112,8 @@ func rootPreRun(cmd *cobra.Command, args []string) error {
 }
 
 func runVersion(cmd *cobra.Command, args []string) error {
-	ver := struct {
-		VCSRef string
-		VCSTag string
-	}{
-		VCSRef: VCSRef,
-		VCSTag: VCSTag,
-	}
-	return template.Writer(os.Stdout, rootOpts.format, ver)
+	info := version.GetInfo()
+	return template.Writer(os.Stdout, rootOpts.format, info)
 }
 
 // runOnce processes the file in one pass, ignoring cron
@@ -264,17 +248,21 @@ func loadConf() error {
 	rcOpts := []regclient.Opt{
 		regclient.WithLog(log),
 	}
-	if conf.Defaults.UserAgent != "" {
-		rcOpts = append(rcOpts, regclient.WithUserAgent(conf.Defaults.UserAgent))
-	} else if VCSTag != "" {
-		rcOpts = append(rcOpts, regclient.WithUserAgent(UserAgent+" ("+VCSTag+")"))
-	} else if VCSRef != "" {
-		rcOpts = append(rcOpts, regclient.WithUserAgent(UserAgent+" ("+VCSRef+")"))
-	} else {
-		rcOpts = append(rcOpts, regclient.WithUserAgent(UserAgent+" (unknown)"))
+	if conf.Defaults.BlobLimit != 0 {
+		rcOpts = append(rcOpts, regclient.WithRegOpts(reg.WithBlobLimit(conf.Defaults.BlobLimit)))
 	}
 	if !conf.Defaults.SkipDockerConf {
 		rcOpts = append(rcOpts, regclient.WithDockerCreds(), regclient.WithDockerCerts())
+	}
+	if conf.Defaults.UserAgent != "" {
+		rcOpts = append(rcOpts, regclient.WithUserAgent(conf.Defaults.UserAgent))
+	} else {
+		info := version.GetInfo()
+		if info.VCSTag != "" {
+			rcOpts = append(rcOpts, regclient.WithUserAgent(UserAgent+" ("+info.VCSTag+")"))
+		} else {
+			rcOpts = append(rcOpts, regclient.WithUserAgent(UserAgent+" ("+info.VCSRef+")"))
+		}
 	}
 	rcHosts := []config.Host{}
 	for _, host := range conf.Creds {
@@ -286,7 +274,7 @@ func loadConf() error {
 		rcHosts = append(rcHosts, host)
 	}
 	if len(rcHosts) > 0 {
-		rcOpts = append(rcOpts, regclient.WithConfigHosts(rcHosts))
+		rcOpts = append(rcOpts, regclient.WithConfigHost(rcHosts...))
 	}
 	rc = regclient.New(rcOpts...)
 	return nil
@@ -327,30 +315,4 @@ func (s ConfigScript) process(ctx context.Context) error {
 	}).Debug("Finished script")
 
 	return nil
-}
-
-func setupVCSVars() {
-	verS := struct {
-		VCSRef string
-		VCSTag string
-	}{}
-
-	verB, err := embedFS.ReadFile("embed/version.json")
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return
-	}
-
-	if len(verB) > 0 {
-		err = json.Unmarshal(verB, &verS)
-		if err != nil {
-			return
-		}
-	}
-
-	if verS.VCSRef != "" {
-		VCSRef = verS.VCSRef
-	}
-	if verS.VCSTag != "" {
-		VCSTag = verS.VCSTag
-	}
 }

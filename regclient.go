@@ -2,17 +2,14 @@
 package regclient
 
 import (
-	"embed"
-	"encoding/json"
-	"errors"
 	"io"
-	"io/fs"
 	"time"
 
 	"fmt"
 
 	"github.com/regclient/regclient/config"
 	"github.com/regclient/regclient/internal/rwfs"
+	"github.com/regclient/regclient/internal/version"
 	"github.com/regclient/regclient/scheme"
 	"github.com/regclient/regclient/scheme/ocidir"
 	"github.com/regclient/regclient/scheme/reg"
@@ -31,20 +28,6 @@ const (
 	// DockerRegistryDNS is the actual registry DNS name for Docker Hub
 	DockerRegistryDNS = config.DockerRegistryDNS
 )
-
-//go:embed embed/*
-var embedFS embed.FS
-
-var (
-	// VCSRef is populated from an embed at build time to the git reference
-	VCSRef = ""
-	// VCSTag is populated from an embed at build time to the git tag if defined
-	VCSTag = ""
-)
-
-func init() {
-	setupVCSVars()
-}
 
 // RegClient is used to access OCI distribution-spec registries
 type RegClient struct {
@@ -71,10 +54,12 @@ func New(opts ...Opt) *RegClient {
 		schemes: map[string]scheme.API{},
 		fs:      rwfs.OSNew(""),
 	}
-	if VCSTag != "" {
-		rc.userAgent = fmt.Sprintf("%s (%s)", rc.userAgent, VCSTag)
-	} else if VCSRef != "" {
-		rc.userAgent = fmt.Sprintf("%s (%s)", rc.userAgent, VCSRef)
+
+	info := version.GetInfo()
+	if info.VCSTag != "" {
+		rc.userAgent = fmt.Sprintf("%s (%s)", rc.userAgent, info.VCSTag)
+	} else {
+		rc.userAgent = fmt.Sprintf("%s (%s)", rc.userAgent, info.VCSRef)
 	}
 
 	// inject Docker Hub settings
@@ -103,18 +88,52 @@ func New(opts ...Opt) *RegClient {
 	)
 
 	rc.log.WithFields(logrus.Fields{
-		"VCSRef": VCSRef,
-		"VCSTag": VCSTag,
+		"VCSRef": info.VCSRef,
+		"VCSTag": info.VCSTag,
 	}).Debug("regclient initialized")
 
 	return &rc
 }
 
+// WithBlobLimit sets the max size for chunked blob uploads which get stored in memory
+//
+// Deprecated: replace with WithRegOpts(reg.WithBlobLimit(limit))
+func WithBlobLimit(limit int64) Opt {
+	return func(rc *RegClient) {
+		rc.regOpts = append(rc.regOpts, reg.WithBlobLimit(limit))
+	}
+}
+
+// WithBlobSize overrides default blob sizes
+//
+// Deprecated: replace with WithRegOpts(reg.WithBlobSize(chunk, max))
+func WithBlobSize(chunk, max int64) Opt {
+	return func(rc *RegClient) {
+		rc.regOpts = append(rc.regOpts, reg.WithBlobSize(chunk, max))
+	}
+}
+
 // WithCertDir adds a path of certificates to trust similar to Docker's /etc/docker/certs.d
+//
+// Deprecated: replace with WithRegOpts(reg.WithCertDirs(path))
 func WithCertDir(path ...string) Opt {
 	return func(rc *RegClient) {
 		rc.regOpts = append(rc.regOpts, reg.WithCertDirs(path))
 	}
+}
+
+// WithConfigHost adds a list of config host settings
+func WithConfigHost(configHost ...config.Host) Opt {
+	return func(rc *RegClient) {
+		rc.hostLoad("host", configHost)
+	}
+}
+
+// WithConfigHosts adds a list of config host settings
+//
+// Deprecated: replace with WithConfigHost
+func WithConfigHosts(configHosts []config.Host) Opt {
+	return WithConfigHost(configHosts...)
 }
 
 // WithDockerCerts adds certificates trusted by docker in /etc/docker/certs.d
@@ -137,25 +156,6 @@ func WithDockerCreds() Opt {
 	}
 }
 
-// WithConfigHosts adds a list of config host settings
-func WithConfigHosts(configHosts []config.Host) Opt {
-	return func(rc *RegClient) {
-		rc.hostLoad("host", configHosts)
-	}
-}
-
-// WithConfigHost adds config host settings
-func WithConfigHost(configHost config.Host) Opt {
-	return WithConfigHosts([]config.Host{configHost})
-}
-
-// WithBlobSize overrides default blob sizes
-func WithBlobSize(chunk, max int64) Opt {
-	return func(rc *RegClient) {
-		rc.regOpts = append(rc.regOpts, reg.WithBlobSize(chunk, max))
-	}
-}
-
 // WithFS overrides the backing filesystem (used by ocidir)
 func WithFS(fs rwfs.RWFS) Opt {
 	return func(rc *RegClient) {
@@ -170,7 +170,19 @@ func WithLog(log *logrus.Logger) Opt {
 	}
 }
 
+// WithRegOpts passes through opts to the reg scheme
+func WithRegOpts(opts ...reg.Opts) Opt {
+	return func(rc *RegClient) {
+		if len(opts) == 0 {
+			return
+		}
+		rc.regOpts = append(rc.regOpts, opts...)
+	}
+}
+
 // WithRetryDelay specifies the time permitted for retry delays
+//
+// Deprecated: replace with WithRegOpts(reg.WithDelay(delayInit, delayMax))
 func WithRetryDelay(delayInit, delayMax time.Duration) Opt {
 	return func(rc *RegClient) {
 		rc.regOpts = append(rc.regOpts, reg.WithDelay(delayInit, delayMax))
@@ -178,6 +190,8 @@ func WithRetryDelay(delayInit, delayMax time.Duration) Opt {
 }
 
 // WithRetryLimit specifies the number of retries for non-fatal errors
+//
+// Deprecated: replace with WithRegOpts(reg.WithRetryLimit(retryLimit))
 func WithRetryLimit(retryLimit int) Opt {
 	return func(rc *RegClient) {
 		rc.regOpts = append(rc.regOpts, reg.WithRetryLimit(retryLimit))
@@ -246,30 +260,4 @@ func (rc *RegClient) hostSet(newHost config.Host) error {
 		return err
 	}
 	return nil
-}
-
-func setupVCSVars() {
-	verS := struct {
-		VCSRef string
-		VCSTag string
-	}{}
-
-	verB, err := embedFS.ReadFile("embed/version.json")
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return
-	}
-
-	if len(verB) > 0 {
-		err = json.Unmarshal(verB, &verS)
-		if err != nil {
-			return
-		}
-	}
-
-	if verS.VCSRef != "" {
-		VCSRef = verS.VCSRef
-	}
-	if verS.VCSTag != "" {
-		VCSTag = verS.VCSTag
-	}
 }

@@ -19,9 +19,11 @@ import (
 	"github.com/regclient/regclient/internal/auth"
 	"github.com/regclient/regclient/internal/reqresp"
 	"github.com/regclient/regclient/types"
+	"github.com/regclient/regclient/types/warning"
 )
 
 // TODO: test for race conditions
+// TODO: test rate limits and concurrency
 
 func TestRegHttp(t *testing.T) {
 	ctx := context.Background()
@@ -103,6 +105,8 @@ func TestRegHttp(t *testing.T) {
 		RefreshToken: "refresh2PValue",
 		Scope:        "repository:project2:pull,push",
 	})
+	warnMsg1 := "test warning 1"
+	warnMsg2 := "test warning 2"
 	rrsToken := []reqresp.ReqResp{
 		{
 			ReqEntry: reqresp.ReqEntry{
@@ -349,6 +353,31 @@ func TestRegHttp(t *testing.T) {
 		},
 		{
 			ReqEntry: reqresp.ReqEntry{
+				Name:   "unauthorized project-missing-auth",
+				Method: "GET",
+				Path:   "/v2/project-missing-auth/manifests/tag-repoauth",
+			},
+			RespEntry: reqresp.RespEntry{
+				Status: http.StatusUnauthorized,
+				Body:   []byte("Unauthorized"),
+			},
+		},
+		{
+			ReqEntry: reqresp.ReqEntry{
+				Name:   "unauthorized project-bad-auth",
+				Method: "GET",
+				Path:   "/v2/project-bad-auth/manifests/tag-repoauth",
+			},
+			RespEntry: reqresp.RespEntry{
+				Status: http.StatusUnauthorized,
+				Body:   []byte("Unauthorized"),
+				Headers: http.Header{
+					"WWW-Authenticate": []string{`Bearer realm="http://` + tsTokenHost + `/token`},
+				},
+			},
+		},
+		{
+			ReqEntry: reqresp.ReqEntry{
 				Name:   "post manifest",
 				Method: "POST",
 				Path:   "/v2/project/manifests/tag-post",
@@ -364,6 +393,33 @@ func TestRegHttp(t *testing.T) {
 				Method: "PUT",
 				Path:   "/v2/project/manifests/tag-put",
 				Body:   putBody,
+			},
+			RespEntry: reqresp.RespEntry{
+				Status: http.StatusCreated,
+			},
+		},
+		{
+			ReqEntry: reqresp.ReqEntry{
+				Name:     "put manifest fail",
+				Method:   "PUT",
+				Path:     "/v2/project/manifests/tag-put-fail",
+				Body:     putBody,
+				IfState:  []string{"", "ok"},
+				SetState: "put-fail",
+			},
+			RespEntry: reqresp.RespEntry{
+				Status: http.StatusCreated,
+				Fail:   true,
+			},
+		},
+		{
+			ReqEntry: reqresp.ReqEntry{
+				Name:     "put manifest retry",
+				Method:   "PUT",
+				Path:     "/v2/project/manifests/tag-put-fail",
+				Body:     putBody,
+				IfState:  []string{"put-fail"},
+				SetState: "ok",
 			},
 			RespEntry: reqresp.RespEntry{
 				Status: http.StatusCreated,
@@ -541,6 +597,28 @@ func TestRegHttp(t *testing.T) {
 				},
 			},
 		},
+		{
+			ReqEntry: reqresp.ReqEntry{
+				Name:   "get warnings",
+				Method: "GET",
+				Path:   "/v2/project/manifests/warning",
+			},
+			RespEntry: reqresp.RespEntry{
+				Status: http.StatusOK,
+				Body:   getBody,
+				Headers: http.Header{
+					"Content-Length":        {fmt.Sprintf("%d", len(getBody))},
+					"Content-Type":          []string{"application/vnd.docker.distribution.manifest.v2+json"},
+					"Docker-Content-Digest": []string{getDigest.String()},
+					"Warning": []string{
+						`199 - "ignore warning"`,
+						`299 - "` + warnMsg1 + `"`,
+						`299 - "` + warnMsg2 + `"`,
+						`299 - "` + warnMsg1 + `"`,
+					},
+				},
+			},
+		},
 	}
 	// create a server
 	ts := httptest.NewServer(reqresp.NewHandler(t, rrs))
@@ -684,6 +762,57 @@ func TestRegHttp(t *testing.T) {
 		}
 		if resp.HTTPResponse().StatusCode != 200 {
 			t.Errorf("invalid status code, expected 200, received %d", resp.HTTPResponse().StatusCode)
+		}
+		body, err := io.ReadAll(resp)
+		if err != nil {
+			t.Errorf("body read failure: %v", err)
+		} else if !bytes.Equal(body, getBody) {
+			t.Errorf("body read mismatch, expected %s, received %s", getBody, body)
+		}
+		err = resp.Close()
+		if err != nil {
+			t.Errorf("error closing request: %v", err)
+		}
+	})
+	t.Run("Seek", func(t *testing.T) {
+		apiGet := map[string]ReqAPI{
+			"": {
+				Method:     "GET",
+				Repository: "project",
+				Path:       "manifests/tag-get",
+				Headers:    headers,
+				Digest:     getDigest,
+			},
+		}
+		getReq := &Req{
+			Host: tsHost,
+			APIs: apiGet,
+		}
+		resp, err := hc.Do(ctx, getReq)
+		if err != nil {
+			t.Errorf("failed to run get: %v", err)
+			return
+		}
+		if resp.HTTPResponse().StatusCode != 200 {
+			t.Errorf("invalid status code, expected 200, received %d", resp.HTTPResponse().StatusCode)
+		}
+		b := make([]byte, 2)
+		l, err := resp.Read(b)
+		if err != nil {
+			t.Errorf("body read failure: %v", err)
+		}
+		if l != 2 {
+			t.Errorf("unexpected length, expected 2, received %d", l)
+		}
+		if !bytes.Equal(b, getBody[:2]) {
+			t.Errorf("body read mismatch, expected %s, received %s", getBody[:2], b)
+		}
+		cur, err := resp.Seek(0, io.SeekStart)
+		if err != nil {
+			t.Errorf("seek failure: %v", err)
+		}
+		if cur != 0 {
+			t.Errorf("seek to unexpected offset, expected 0, received %d", cur)
 		}
 		body, err := io.ReadAll(resp)
 		if err != nil {
@@ -937,6 +1066,52 @@ func TestRegHttp(t *testing.T) {
 			t.Errorf("expected error %v, received error %v", auth.ErrUnauthorized, err)
 		}
 	})
+	t.Run("Bad auth", func(t *testing.T) {
+		apiAuth := map[string]ReqAPI{
+			"": {
+				Method:     "GET",
+				Repository: "project-bad-auth",
+				Path:       "manifests/tag-repoauth",
+				Headers:    headers,
+				Digest:     getDigest,
+			},
+		}
+		authReq := &Req{
+			Host: "repoauth." + tsHost,
+			APIs: apiAuth,
+		}
+		resp, err := hc.Do(ctx, authReq)
+		if err == nil {
+			t.Errorf("unexpected success with bad auth header")
+			resp.Close()
+			return
+		} else if !errors.Is(err, types.ErrParsingFailed) {
+			t.Errorf("expected error %v, received error %v", types.ErrParsingFailed, err)
+		}
+	})
+	t.Run("Missing auth", func(t *testing.T) {
+		apiAuth := map[string]ReqAPI{
+			"": {
+				Method:     "GET",
+				Repository: "project-missing-auth",
+				Path:       "manifests/tag-repoauth",
+				Headers:    headers,
+				Digest:     getDigest,
+			},
+		}
+		authReq := &Req{
+			Host: "repoauth." + tsHost,
+			APIs: apiAuth,
+		}
+		resp, err := hc.Do(ctx, authReq)
+		if err == nil {
+			t.Errorf("unexpected success with missing auth header")
+			resp.Close()
+			return
+		} else if !errors.Is(err, types.ErrEmptyChallenge) {
+			t.Errorf("expected error %v, received error %v", types.ErrEmptyChallenge, err)
+		}
+	})
 	// test repoauth
 	t.Run("RepoAuth", func(t *testing.T) {
 		apiAuth1G := map[string]ReqAPI{
@@ -1079,6 +1254,38 @@ func TestRegHttp(t *testing.T) {
 		}
 		if resp.HTTPResponse().StatusCode != http.StatusAccepted {
 			t.Errorf("invalid status code, expected %d, received %d", http.StatusAccepted, resp.HTTPResponse().StatusCode)
+		}
+		body, err := io.ReadAll(resp)
+		if err != nil {
+			t.Errorf("body read failure: %v", err)
+		} else if len(body) > 0 {
+			t.Errorf("body read mismatch, expected empty body, received %s", body)
+		}
+		err = resp.Close()
+		if err != nil {
+			t.Errorf("error closing request: %v", err)
+		}
+	})
+	t.Run("Put body retry", func(t *testing.T) {
+		apiPut := map[string]ReqAPI{
+			"": {
+				Method:     "PUT",
+				Repository: "project",
+				Path:       "manifests/tag-put-fail",
+				BodyBytes:  putBody,
+			},
+		}
+		putReq := &Req{
+			Host: tsHost,
+			APIs: apiPut,
+		}
+		resp, err := hc.Do(ctx, putReq)
+		if err != nil {
+			t.Errorf("failed to run put: %v", err)
+			return
+		}
+		if resp.HTTPResponse().StatusCode != http.StatusCreated {
+			t.Errorf("invalid status code, expected %d, received %d", http.StatusCreated, resp.HTTPResponse().StatusCode)
 		}
 		body, err := io.ReadAll(resp)
 		if err != nil {
@@ -1234,8 +1441,8 @@ func TestRegHttp(t *testing.T) {
 			t.Errorf("unexpected success on get for missing manifest")
 			resp.Close()
 			return
-		} else if !errors.Is(err, types.ErrUnauthorized) {
-			t.Errorf("unexpected error, expected %v, received %v", types.ErrUnauthorized, err)
+		} else if !errors.Is(err, types.ErrHTTPUnauthorized) {
+			t.Errorf("unexpected error, expected %v, received %v", types.ErrHTTPUnauthorized, err)
 		}
 	})
 	t.Run("Bad GW", func(t *testing.T) {
@@ -1393,6 +1600,42 @@ func TestRegHttp(t *testing.T) {
 			t.Errorf("body read failure: %v", err)
 		} else if !bytes.Equal(body, retryBody) {
 			t.Errorf("body read mismatch, expected %s, received %s", retryBody, body)
+		}
+		err = resp.Close()
+		if err != nil {
+			t.Errorf("error closing request: %v", err)
+		}
+	})
+	t.Run("Warning", func(t *testing.T) {
+		apiGet := map[string]ReqAPI{
+			"": {
+				Method:     "GET",
+				Repository: "project",
+				Path:       "manifests/warning",
+				Headers:    headers,
+				Digest:     getDigest,
+			},
+		}
+		getReq := &Req{
+			Host: tsHost,
+			APIs: apiGet,
+		}
+		w := &warning.Warning{}
+		wCtx := warning.NewContext(ctx, w)
+		resp, err := hc.Do(wCtx, getReq)
+		if err != nil {
+			t.Errorf("failed to run get: %v", err)
+			return
+		}
+		if len(w.List) != 2 {
+			t.Errorf("warning count, expected 2, received %d", len(w.List))
+		} else {
+			if w.List[0] != warnMsg1 {
+				t.Errorf("warning 1, expected %s, received %s", warnMsg1, w.List[0])
+			}
+			if w.List[1] != warnMsg2 {
+				t.Errorf("warning 2, expected %s, received %s", warnMsg2, w.List[1])
+			}
 		}
 		err = resp.Close()
 		if err != nil {

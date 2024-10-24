@@ -17,12 +17,14 @@ import (
 
 	digest "github.com/opencontainers/go-digest"
 	"github.com/regclient/regclient/pkg/archive"
+	"github.com/regclient/regclient/scheme"
 	"github.com/regclient/regclient/types"
 	"github.com/regclient/regclient/types/docker/schema2"
 	"github.com/regclient/regclient/types/manifest"
 	v1 "github.com/regclient/regclient/types/oci/v1"
 	"github.com/regclient/regclient/types/platform"
 	"github.com/regclient/regclient/types/ref"
+	"github.com/regclient/regclient/types/warning"
 	"github.com/sirupsen/logrus"
 )
 
@@ -73,12 +75,13 @@ type imageOpt struct {
 	checkBaseRef    string
 	checkSkipConfig bool
 	child           bool
+	exportRef       ref.Ref
 	forceRecursive  bool
 	includeExternal bool
 	digestTags      bool
 	platform        string
 	platforms       []string
-	referrers       bool
+	referrerConfs   []scheme.ReferrerConfig
 	tagList         []string
 }
 
@@ -110,6 +113,13 @@ func ImageWithCheckSkipConfig() ImageOpts {
 func ImageWithChild() ImageOpts {
 	return func(opts *imageOpt) {
 		opts.child = true
+	}
+}
+
+// ImageWithExportRef overrides the image name embedded in the export file
+func ImageWithExportRef(r ref.Ref) ImageOpts {
+	return func(opts *imageOpt) {
+		opts.exportRef = r
 	}
 }
 
@@ -153,9 +163,16 @@ func ImageWithPlatforms(p []string) ImageOpts {
 }
 
 // ImageWithReferrers recursively includes images that refer to this.
-func ImageWithReferrers() ImageOpts {
+func ImageWithReferrers(rOpts ...scheme.ReferrerOpts) ImageOpts {
 	return func(opts *imageOpt) {
-		opts.referrers = true
+		if opts.referrerConfs == nil {
+			opts.referrerConfs = []scheme.ReferrerConfig{}
+		}
+		rConf := scheme.ReferrerConfig{}
+		for _, rOpt := range rOpts {
+			rOpt(&rConf)
+		}
+		opts.referrerConfs = append(opts.referrerConfs, rConf)
 	}
 }
 
@@ -200,7 +217,7 @@ func (rc *RegClient) ImageCheckBase(ctx context.Context, r ref.Ref, opts ...Imag
 
 	// if the digest is available, check if that matches the base name
 	if opt.checkBaseDigest != "" {
-		baseMH, err := rc.ManifestHead(ctx, baseR)
+		baseMH, err := rc.ManifestHead(ctx, baseR, WithManifestRequireDigest())
 		if err != nil {
 			return err
 		}
@@ -380,6 +397,10 @@ func (rc *RegClient) ImageCopy(ctx context.Context, refSrc ref.Ref, refTgt ref.R
 	for _, optFn := range opts {
 		optFn(&opt)
 	}
+	// dedup warnings
+	if w := warning.FromContext(ctx); w == nil {
+		ctx = warning.NewContext(ctx, &warning.Warning{Hook: warning.DefaultHook()})
+	}
 	return rc.imageCopyOpt(ctx, refSrc, refTgt, types.Descriptor{}, opt.child, &opt)
 }
 
@@ -398,7 +419,7 @@ func (rc *RegClient) imageCopyOpt(ctx context.Context, refSrc ref.Ref, refTgt re
 		opt.forceRecursive = true
 	}
 	// check if source and destination already match
-	mdh, errD := rc.ManifestHead(ctx, refTgt)
+	mdh, errD := rc.ManifestHead(ctx, refTgt, WithManifestRequireDigest())
 	if opt.forceRecursive {
 		// copy forced, unable to run below skips
 	} else if errD == nil && refTgt.Digest != "" && digest.Digest(refTgt.Digest) == mdh.GetDescriptor().Digest {
@@ -408,7 +429,7 @@ func (rc *RegClient) imageCopyOpt(ctx context.Context, refSrc ref.Ref, refTgt re
 		}).Info("Copy not needed, target already up to date")
 		return nil
 	} else if errD == nil && refTgt.Digest == "" {
-		msh, errS := rc.ManifestHead(ctx, refSrc)
+		msh, errS := rc.ManifestHead(ctx, refSrc, WithManifestRequireDigest())
 		if errS == nil && msh.GetDescriptor().Digest == mdh.GetDescriptor().Digest {
 			rc.log.WithFields(logrus.Fields{
 				"source": refSrc.Reference,
@@ -575,13 +596,22 @@ func (rc *RegClient) imageCopyOpt(ctx context.Context, refSrc ref.Ref, refTgt re
 
 	// copy referrers
 	referrerTags := []string{}
-	if opt.referrers {
+	if opt.referrerConfs != nil {
 		rl, err := rc.ReferrerList(ctx, refSrc)
 		if err != nil {
 			return err
 		}
 		referrerTags = append(referrerTags, rl.Tags...)
-		for _, rDesc := range rl.Descriptors {
+		descList := []types.Descriptor{}
+		if len(opt.referrerConfs) == 0 {
+			descList = rl.Descriptors
+		} else {
+			for _, rConf := range opt.referrerConfs {
+				rlFilter := scheme.ReferrerFilter(rConf, rl)
+				descList = append(descList, rlFilter.Descriptors...)
+			}
+		}
+		for _, rDesc := range descList {
 			referrerSrc := refSrc
 			referrerSrc.Tag = ""
 			referrerSrc.Digest = rDesc.Digest.String()
@@ -664,8 +694,16 @@ func (rc *RegClient) imageCopyOpt(ctx context.Context, refSrc ref.Ref, refTgt re
 // index.json: created at top level, single descriptor with org.opencontainers.image.ref.name annotation pointing to the tag
 // manifest.json: created at top level, based on every layer added, only works for a single arch image
 // blobs/$algo/$hash: each content addressable object (manifest, config, or layer), created recursively
-func (rc *RegClient) ImageExport(ctx context.Context, r ref.Ref, outStream io.Writer) error {
+func (rc *RegClient) ImageExport(ctx context.Context, r ref.Ref, outStream io.Writer, opts ...ImageOpts) error {
 	var ociIndex v1.Index
+
+	var opt imageOpt
+	for _, optFn := range opts {
+		optFn(&opt)
+	}
+	if opt.exportRef.IsZero() {
+		opt.exportRef = r
+	}
 
 	// create tar writer object
 	tw := tar.NewWriter(outStream)
@@ -699,8 +737,8 @@ func (rc *RegClient) ImageExport(ctx context.Context, r ref.Ref, outStream io.Wr
 	if mDesc.Annotations == nil {
 		mDesc.Annotations = map[string]string{}
 	}
-	mDesc.Annotations[annotationImageName] = r.CommonName()
-	mDesc.Annotations[annotationRefName] = r.Tag
+	mDesc.Annotations[annotationImageName] = opt.exportRef.CommonName()
+	mDesc.Annotations[annotationRefName] = opt.exportRef.Tag
 
 	// generate/write an OCI index
 	ociIndex.Versioned = v1.IndexSchemaVersion
@@ -716,7 +754,7 @@ func (rc *RegClient) ImageExport(ctx context.Context, r ref.Ref, outStream io.Wr
 		if err != nil {
 			return err
 		}
-		refTag := r.ToReg()
+		refTag := opt.exportRef.ToReg()
 		if refTag.Digest != "" {
 			refTag.Digest = ""
 		}
@@ -960,7 +998,7 @@ func (rc *RegClient) imageImportDockerAddLayerHandlers(ctx context.Context, ref 
 	trd.dockerManifest.Layers = make([]types.Descriptor, len(trd.dockerManifestList[0].Layers))
 
 	// add handler for config
-	trd.handlers[trd.dockerManifestList[0].Config] = func(header *tar.Header, trd *tarReadData) error {
+	trd.handlers[filepath.Clean(trd.dockerManifestList[0].Config)] = func(header *tar.Header, trd *tarReadData) error {
 		// upload blob, digest is unknown
 		d, err := rc.BlobPut(ctx, ref, types.Descriptor{Size: header.Size}, trd.tr)
 		if err != nil {
@@ -978,7 +1016,7 @@ func (rc *RegClient) imageImportDockerAddLayerHandlers(ctx context.Context, ref 
 	// add handlers for each layer
 	for i, layerFile := range trd.dockerManifestList[0].Layers {
 		func(i int) {
-			trd.handlers[layerFile] = func(header *tar.Header, trd *tarReadData) error {
+			trd.handlers[filepath.Clean(layerFile)] = func(header *tar.Header, trd *tarReadData) error {
 				// ensure blob is compressed with gzip to match media type
 				gzipR, err := archive.Compress(trd.tr, archive.CompressGzip)
 				if err != nil {
@@ -1271,14 +1309,15 @@ func (trd *tarReadData) tarReadAll(rs io.ReadSeeker) error {
 			} else if err != nil {
 				return err
 			}
+			name := filepath.Clean(header.Name)
 			// if a handler exists, run it, remove handler, and check if we are done
-			if trd.handlers[header.Name] != nil {
-				err = trd.handlers[header.Name](header, trd)
+			if trd.handlers[name] != nil {
+				err = trd.handlers[name](header, trd)
 				if err != nil {
 					return err
 				}
-				delete(trd.handlers, header.Name)
-				trd.processed[header.Name] = true
+				delete(trd.handlers, name)
+				trd.processed[name] = true
 				// return if last handler processed
 				if len(trd.handlers) == 0 {
 					return nil
@@ -1287,7 +1326,7 @@ func (trd *tarReadData) tarReadAll(rs io.ReadSeeker) error {
 		}
 		// if entire file read without adding a new handler, fail
 		if !trd.handleAdded {
-			return fmt.Errorf("unable to export all files from tar: %w", types.ErrNotFound)
+			return fmt.Errorf("unable to read all files from tar: %w", types.ErrNotFound)
 		}
 	}
 }
@@ -1360,5 +1399,5 @@ func (td *tarWriteData) tarWriteFileJSON(filename string, data interface{}) erro
 }
 
 func tarOCILayoutDescPath(d types.Descriptor) string {
-	return fmt.Sprintf("blobs/%s/%s", d.Digest.Algorithm(), d.Digest.Encoded())
+	return filepath.Clean(fmt.Sprintf("blobs/%s/%s", d.Digest.Algorithm(), d.Digest.Encoded()))
 }

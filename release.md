@@ -1,54 +1,51 @@
-# Release v0.4.5
+# Release v0.4.8
 
 Breaking Changes:
 
-- `regclient.ManifestWithDesc` has been renamed to `regclient.WithManifestDesc` ([PR 283][pr-283])
-- `manifest.Referrer` interface has been renamed to `manifest.Subjecter` ([PR 283][pr-283], [PR 302][pr-302])
-- `ReferrerPut` method has been removed, use `ManifestPut` instead ([PR 283][pr-283])
-- `regclient.ManifestPut` options are now in `regclient` rather than scheme ([PR 283][pr-283])
+- Deprecated: `regclient.WithConfigHosts` is replaced by a variadic on `regclient.WithConfigHost` ([PR 409][pr-409])
+- Deprecated: `regclient.WithBlobLimit`, `regcleint.WithBlobSize`, `regclient.WithCertDir`, `regclient.WithRetryDelay`, and `regclient.WithRetryLimit` are replaced by `regclient.WithRegOpts` ([PR 409][pr-409])
 
 New Features:
 
-- Adding diff commands to regctl for manifests, configs, and layers ([PR 269][pr-269])
-- Supporting OCI subject/referrers ([PR 271][pr-271], [PR 302][pr-302])
-- Adding support for client side filters on artifact list ([PR 273][pr-273])
-- Support Link header in tag pagination seen on quay.io ([PR 276][pr-276])
-- Update referrers to support deletes ([PR 283][pr-283])
-- Add `regctl image check-base` ([PR 288][pr-288])
-- Adding experimental support for rebasing images ([PR 291][pr-291])
-- regclient adds a blob TarReader.ReadFile method ([PR 296][pr-296])
-- Adding `regctl blob get-file` to fetch a file from a layer ([PR 296][pr-296])
-- Adding `regctl image get-file` to fetch a file from the image layers ([PR 296][pr-296])
-- Fallback to using linux platforms on mac and windows when querying manifest lists ([PR 303][pr-303])
+- Add `--platform` option to `regctl image copy/export` ([PR 379][pr-379])
+- Add option to override name in `regctl image export` ([PR 380][pr-380])
+- Add platforms option to `regctl index add/create` ([PR 381][pr-381])
+- Add `--referrers` and `--digest-tags` options to `regctl index add/create` ([PR 382][pr-382])
+- Add `regctl blob copy` command ([PR 385][pr-385])
+- Adding `regctl image mod --to-docker` to convert manifests from OCI to Docker schema2 ([PR 388][pr-388])
+- Support `OCI-Chunk-Min-Length` header ([PR 394][pr-394])
+- Add support for registry warning headers ([PR 396][pr-396])
+- Add `regclient.WithRegOpts` ([PR 408][pr-408])
 
 Bug Fixes:
 
-- Fix reference for ocidir exports for importing into docker ([PR 264][pr-264])
-- Fix support for authentication parsing of token characters without quotes ([PR 266][pr-266])
-- Fix `regctl artifact put` with both a refers and a tag ([PR 290][pr-290])
-- Fixing regbot tests to run on other platforms ([PR 300][pr-300])
+- Improve handling of the referrers API with Harbor ([PR 389][pr-389])
+- Fix an issue on `regctl tag rm` to support registries that require a layer ([PR 395][pr-395])
+- Image mod only converts `config.mediaType` between known values ([PR 399][pr-399])
+- Ignore anonymous blob mount failures ([PR 401][pr-401])
+- Fix handling of docker registry logins with `credStore` ([PR 405][pr-405])
+- Fix regsync handling of the paginated repo listing when syncing registries ([PR 406][pr-406])
 
 Other Changes:
 
-- Upgrade to Go 1.19 ([PR 278][pr-278], [PR 286][pr-286])
-- Add tips to common errors in regctl ([PR 285][pr-285])
-- Descriptor comparison now allows for Docker to OCI conversion ([PR 289][pr-289])
+- Recursively sign manifest list and platform specific images with cosign ([PR 378][pr-378])
+- Include tag in the version output ([PR 392][pr-392])
 
-[pr-264]: https://github.com/regclient/regclient/pull/264
-[pr-266]: https://github.com/regclient/regclient/pull/266
-[pr-269]: https://github.com/regclient/regclient/pull/269
-[pr-271]: https://github.com/regclient/regclient/pull/271
-[pr-273]: https://github.com/regclient/regclient/pull/273
-[pr-276]: https://github.com/regclient/regclient/pull/276
-[pr-278]: https://github.com/regclient/regclient/pull/278
-[pr-283]: https://github.com/regclient/regclient/pull/283
-[pr-285]: https://github.com/regclient/regclient/pull/285
-[pr-286]: https://github.com/regclient/regclient/pull/286
-[pr-288]: https://github.com/regclient/regclient/pull/288
-[pr-289]: https://github.com/regclient/regclient/pull/289
-[pr-290]: https://github.com/regclient/regclient/pull/290
-[pr-291]: https://github.com/regclient/regclient/pull/291
-[pr-296]: https://github.com/regclient/regclient/pull/296
-[pr-300]: https://github.com/regclient/regclient/pull/300
-[pr-302]: https://github.com/regclient/regclient/pull/302
-[pr-303]: https://github.com/regclient/regclient/pull/303
+[pr-378]: https://github.com/regclient/regclient/pull/378
+[pr-379]: https://github.com/regclient/regclient/pull/379
+[pr-380]: https://github.com/regclient/regclient/pull/380
+[pr-381]: https://github.com/regclient/regclient/pull/381
+[pr-382]: https://github.com/regclient/regclient/pull/382
+[pr-385]: https://github.com/regclient/regclient/pull/385
+[pr-388]: https://github.com/regclient/regclient/pull/388
+[pr-389]: https://github.com/regclient/regclient/pull/389
+[pr-392]: https://github.com/regclient/regclient/pull/392
+[pr-394]: https://github.com/regclient/regclient/pull/394
+[pr-395]: https://github.com/regclient/regclient/pull/395
+[pr-396]: https://github.com/regclient/regclient/pull/396
+[pr-399]: https://github.com/regclient/regclient/pull/399
+[pr-401]: https://github.com/regclient/regclient/pull/401
+[pr-405]: https://github.com/regclient/regclient/pull/405
+[pr-406]: https://github.com/regclient/regclient/pull/406
+[pr-408]: https://github.com/regclient/regclient/pull/408
+[pr-409]: https://github.com/regclient/regclient/pull/409

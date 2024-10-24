@@ -24,11 +24,11 @@ steps:
       mount:
         - ./.git
         - ./vendor
-      endpoint: https://cache.wodcloud.com
+      endpoint: https://cache.ali.wodcloud.com
       access_key:
-        from_secret: ACCESS_KEY_MINIO
+        from_secret: S3_ACCESS_KEY_ALIYUN
       secret_key:
-        from_secret: SECRET_KEY_MINIO
+        from_secret: S3_SECRET_KEY_ALIYUN
 
   - name: fetch
     image: registry.cn-qingdao.aliyuncs.com/wod/devops-git:1.0
@@ -37,9 +37,9 @@ steps:
         from_secret: SOCKS5_PROXY
 
   - name: golang
-    image: registry.cn-qingdao.aliyuncs.com/wod/golang:1.19-alpine
+    image: registry.cn-qingdao.aliyuncs.com/wod/golang:1.22-alpine
     environment:
-      VCS_TAG: v0.4.7
+      BUILD_VERSION: v0.4.8
     commands:
       - bash .beagle/build.sh
 
@@ -52,7 +52,7 @@ steps:
       dockerfile: .beagle/dockerfile
       base: registry.cn-qingdao.aliyuncs.com/wod/alpine:3-amd64
       repo: wod/regclient
-      version: v0.4.7
+      version: v0.4.8
       channel: amd64
       args: 'TARGETOS=linux,TARGETARCH=amd64'
       registry: registry.cn-qingdao.aliyuncs.com
@@ -70,7 +70,7 @@ steps:
       dockerfile: .beagle/dockerfile
       base: registry.cn-qingdao.aliyuncs.com/wod/alpine:3-arm64
       repo: wod/regclient
-      version: v0.4.7
+      version: v0.4.8
       channel: arm64
       args: 'TARGETOS=linux,TARGETARCH=arm64'
       registry: registry.cn-qingdao.aliyuncs.com
@@ -79,36 +79,25 @@ steps:
       registry_password:
         from_secret: REGISTRY_PASSWORD_ALIYUN
 
-  - name: docker-ppc64le
-    image: registry.cn-qingdao.aliyuncs.com/wod/devops-docker:1.0
-    volumes:
-      - name: docker
-        path: /var/run/docker.sock
-    settings:
-      dockerfile: .beagle/dockerfile
-      base: registry.cn-qingdao.aliyuncs.com/wod/alpine:3-ppc64le
-      repo: wod/regclient
-      version: v0.4.7
-      channel: ppc64le
-      args: 'TARGETOS=linux,TARGETARCH=ppc64le'
-      registry: registry.cn-qingdao.aliyuncs.com
-      registry_user:
-        from_secret: REGISTRY_USER_ALIYUN
-      registry_password:
-        from_secret: REGISTRY_PASSWORD_ALIYUN
+  - name: golang-loong64
+    image: registry.cn-qingdao.aliyuncs.com/wod/golang:1.22-loongnix
+    environment:
+      BUILD_VERSION: v0.4.8
+    commands:
+      - bash .beagle/build-loong64.sh
 
-  - name: docker-mips64le
+  - name: docker-loong64
     image: registry.cn-qingdao.aliyuncs.com/wod/devops-docker:1.0
     volumes:
       - name: docker
         path: /var/run/docker.sock
     settings:
       dockerfile: .beagle/dockerfile
-      base: registry.cn-qingdao.aliyuncs.com/wod/alpine:3-mips64le
+      base: registry.cn-qingdao.aliyuncs.com/wod/alpine:3-amd64
       repo: wod/regclient
-      version: v0.4.7
-      channel: mips64le
-      args: 'TARGETOS=linux,TARGETARCH=mips64le'
+      version: v0.4.8
+      channel: loong64
+      args: 'TARGETOS=linux,TARGETARCH=loong64'
       registry: registry.cn-qingdao.aliyuncs.com
       registry_user:
         from_secret: REGISTRY_USER_ALIYUN
@@ -117,13 +106,10 @@ steps:
 
   - name: docker-arch
     image: registry.cn-qingdao.aliyuncs.com/wod/devops-docker-manifest:1.0
-    volumes:
-      - name: docker
-        path: /var/run/docker.sock
     settings:
-      platforms: linux/amd64,linux/arm64,linux/ppc64le,linux/mips64le
-      template: registry.cn-qingdao.aliyuncs.com/wod/regclient:v0.4.7-ARCH
-      target: registry.cn-qingdao.aliyuncs.com/wod/regclient:v0.4.7
+      platforms: linux/amd64,linux/arm64,linux/loong64
+      template: registry.cn-qingdao.aliyuncs.com/wod/regclient:v0.4.8-ARCH
+      target: registry.cn-qingdao.aliyuncs.com/wod/regclient:v0.4.8
       username:
         from_secret: REGISTRY_USER_ALIYUN
       password:
@@ -131,17 +117,14 @@ steps:
 
   - name: minio
     image: registry.cn-qingdao.aliyuncs.com/wod/devops-minio:1.0
-    volumes:
-      - name: docker
-        path: /var/run/docker.sock
     environment:
       S3_ACCESS_KEY: 
-        from_secret: ACCESS_KEY_MINIO
+        from_secret: S3_ACCESS_KEY_ALIYUN
       S3_SECRET_KEY: 
-        from_secret: SECRET_KEY_MINIO
+        from_secret: S3_SECRET_KEY_ALIYUN
     commands:
-      - mc alias set cache --api=S3v4 https://cache.wodcloud.com $S3_ACCESS_KEY $S3_SECRET_KEY
-      - mc cp --recursive artifacts/ cache/vscode/regclient/v0.4.7/
+      - mc alias set cache --api=S3v4 https://cache.ali.wodcloud.com $S3_ACCESS_KEY $S3_SECRET_KEY
+      - mc cp --recursive artifacts/ cache/vscode/regclient/
 
 ---
 kind: pipeline
@@ -151,22 +134,14 @@ trigger:
   branch:
     - main
 
-volumes:
-  - name: docker
-    host:
-      path: /var/run/docker.sock
-
 clone:
   disable: true
 
 steps:
   - name: harbor-amd64
     image: registry.cn-qingdao.aliyuncs.com/wod/devops-docker-tag:1.0
-    volumes:
-      - name: docker
-        path: /var/run/docker.sock
     settings:
-      source: registry.cn-qingdao.aliyuncs.com/wod/regclient:v0.4.7-amd64
+      source: registry.cn-qingdao.aliyuncs.com/wod/regclient:v0.4.8-amd64
       target: registry.cn-qingdao.aliyuncs.com/wod/regclient:v0.4-amd64
       registry: registry.cn-qingdao.aliyuncs.com
       registry_user:
@@ -176,11 +151,8 @@ steps:
 
   - name: harbor-arm64
     image: registry.cn-qingdao.aliyuncs.com/wod/devops-docker-tag:1.0
-    volumes:
-      - name: docker
-        path: /var/run/docker.sock
     settings:
-      source: registry.cn-qingdao.aliyuncs.com/wod/regclient:v0.4.7-arm64
+      source: registry.cn-qingdao.aliyuncs.com/wod/regclient:v0.4.8-arm64
       target: registry.cn-qingdao.aliyuncs.com/wod/regclient:v0.4-arm64
       registry: registry.cn-qingdao.aliyuncs.com
       registry_user:
@@ -188,28 +160,11 @@ steps:
       registry_password:
         from_secret: REGISTRY_PASSWORD_ALIYUN
 
-  - name: harbor-ppc64le
+  - name: harbor-loong64
     image: registry.cn-qingdao.aliyuncs.com/wod/devops-docker-tag:1.0
-    volumes:
-      - name: docker
-        path: /var/run/docker.sock
     settings:
-      source: registry.cn-qingdao.aliyuncs.com/wod/regclient:v0.4.7-ppc64le
-      target: registry.cn-qingdao.aliyuncs.com/wod/regclient:v0.4-ppc64le
-      registry: registry.cn-qingdao.aliyuncs.com
-      registry_user:
-        from_secret: REGISTRY_USER_ALIYUN
-      registry_password:
-        from_secret: REGISTRY_PASSWORD_ALIYUN
-
-  - name: harbor-mips64le
-    image: registry.cn-qingdao.aliyuncs.com/wod/devops-docker-tag:1.0
-    volumes:
-      - name: docker
-        path: /var/run/docker.sock
-    settings:
-      source: registry.cn-qingdao.aliyuncs.com/wod/regclient:v0.4.7-mips64le
-      target: registry.cn-qingdao.aliyuncs.com/wod/regclient:v0.4-mips64le
+      source: registry.cn-qingdao.aliyuncs.com/wod/regclient:v0.4.8-loong64
+      target: registry.cn-qingdao.aliyuncs.com/wod/regclient:v0.4-loong64
       registry: registry.cn-qingdao.aliyuncs.com
       registry_user:
         from_secret: REGISTRY_USER_ALIYUN
@@ -218,11 +173,8 @@ steps:
 
   - name: harbor-arch
     image: registry.cn-qingdao.aliyuncs.com/wod/devops-docker-manifest:1.0
-    volumes:
-      - name: docker
-        path: /var/run/docker.sock
     settings:
-      platforms: linux/amd64,linux/arm64,linux/ppc64le,linux/mips64le
+      platforms: linux/amd64,linux/arm64,linux/loong64
       template: registry.cn-qingdao.aliyuncs.com/wod/regclient:v0.4-ARCH
       target: registry.cn-qingdao.aliyuncs.com/wod/regclient:v0.4
       username:
@@ -253,14 +205,14 @@ get:
 
 ---
 kind: secret
-name: ACCESS_KEY_MINIO
+name: S3_ACCESS_KEY_ALIYUN
 get:
-  name: ACCESS_KEY_MINIO
+  name: S3_ACCESS_KEY_ALIYUN
   path: devops-secrets
 
 ---
 kind: secret
-name: SECRET_KEY_MINIO
+name: S3_SECRET_KEY_ALIYUN
 get:
-  name: SECRET_KEY_MINIO
+  name: S3_SECRET_KEY_ALIYUN
   path: devops-secrets
